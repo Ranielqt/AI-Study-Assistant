@@ -5,10 +5,7 @@ let aiInstance: GoogleGenAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // Check various ways the key might be exposed (AI Studio context)
-    const apiKey = (process as any).env?.GEMINI_API_KEY || 
-                   (import.meta as any).env?.GEMINI_API_KEY || 
-                   (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    const apiKey = (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
       console.warn("GEMINI_API_KEY is missing from environment secrets.");
@@ -18,7 +15,7 @@ export function getAI() {
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-2.0-flash";
+const MODEL_TO_USE = "gemini-3-flash-preview";
 
 /**
  * Cap history to avoid hitting Token limits.
