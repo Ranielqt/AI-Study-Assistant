@@ -41,7 +41,7 @@ export const generateStudyResponse = async (
   file?: { data: string, mimeType: string }
 ) => {
   const ai = getAI();
-  const model = "gemini-flash-latest";
+  const model = "gemini-1.5-flash";
   
   const contents = capHistory([...history]);
   const currentParts: any[] = [{ text: question }];
@@ -81,7 +81,7 @@ export const generateChatStream = async (
   file?: { data: string, mimeType: string }
 ) => {
   const ai = getAI();
-  const model = "gemini-flash-latest";
+  const model = "gemini-1.5-flash";
   
   const contents = capHistory([...history]);
   const currentParts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
@@ -115,7 +115,7 @@ export const generateChatStream = async (
 
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
   const ai = getAI();
-  const model = "gemini-flash-latest";
+  const model = "gemini-1.5-flash";
   
   const parts: any[] = [
     { text: `Summarize the following notes from the file "${fileName}" in 100-200 words. Focus on key concepts and main takeaways.` }
@@ -152,7 +152,7 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   const ai = getAI();
-  const model = "gemini-flash-latest";
+  const model = "gemini-1.5-flash";
   
   const parts: any[] = [{ 
     text: `Generate 5 multiple-choice questions based on the following topic or content: "${topicOrContent}". 
@@ -212,7 +212,7 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
   if (chatHistory.length < 3) return [];
 
   const ai = getAI();
-  const model = "gemini-flash-latest";
+  const model = "gemini-1.5-flash";
   
   const response = await ai.models.generateContent({
     model,
