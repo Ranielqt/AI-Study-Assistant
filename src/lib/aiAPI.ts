@@ -17,13 +17,6 @@ export function getAI() {
   return aiInstance;
 }
 
-export interface FilePart {
-  inlineData: {
-    data: string;
-    mimeType: string;
-  };
-}
-
 /**
  * Cap history to avoid hitting Token limits (TPM) and saving cost/quota.
  * Keeps the last 10 turns (20 messages).
@@ -41,7 +34,7 @@ export const generateStudyResponse = async (
   file?: { data: string, mimeType: string }
 ) => {
   const model = "gemini-1.5-flash";
-  const ai = getAI();
+  const genAI = getAI();
   
   const contents = capHistory([...history]);
   const currentParts: any[] = [{ text: question }];
@@ -58,9 +51,8 @@ export const generateStudyResponse = async (
   contents.push({ role: "user", parts: currentParts });
 
   try {
-    const genAI = getAI();
     const modelInstance = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: model,
       systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Keep responses focused and readable.",
     });
 
@@ -83,7 +75,7 @@ export const generateChatStream = async (
   history: any[],
   file?: { data: string, mimeType: string }
 ) => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const contents = capHistory([...history]);
@@ -101,9 +93,8 @@ export const generateChatStream = async (
   contents.push({ role: "user", parts: currentParts });
 
   try {
-    const genAI = getAI();
     const modelInstance = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: model,
       systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString()} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting. If a file is attached, analyze its content.`,
     });
 
@@ -121,7 +112,7 @@ export const generateChatStream = async (
 };
 
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const parts: any[] = [
@@ -135,14 +126,15 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
         mimeType: fileData.mimeType
       }
     });
-  } else if (textContent) {
+  }
+
+  if (textContent) {
     parts.push({ text: `Content:\n${textContent}` });
   }
 
   try {
-    const genAI = getAI();
     const modelInstance = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: model,
       systemInstruction: "You are an expert at academic summarization. Provide a clear, bulleted summary of the provided text/file.",
     });
 
@@ -161,13 +153,12 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 };
 
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const parts: any[] = [{ 
     text: `Generate 5 multiple-choice questions based on the following topic or content: "${topicOrContent}". 
-    Each question should have exactly 4 options. 
-    Include a brief explanation for the correct answer.` 
+    Return the response as a JSON array where each object has: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.` 
   }];
 
   if (file) {
@@ -180,9 +171,8 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
   }
 
   try {
-    const genAI = getAI();
     const modelInstance = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: model,
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -227,8 +217,10 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
   if (chatHistory.length < 3) return [];
 
   const genAI = getAI();
+  const model = "gemini-1.5-flash";
+  
   const modelInstance = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: model,
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -238,16 +230,21 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
     }
   });
   
-  const result = await modelInstance.generateContent({
-    contents: [{
-      role: "user",
-      parts: [{ text: `Based on these recent student queries: ${chatHistory.join(", ")}. 
-      Suggest 3 relevant follow-up questions or study topics the student might be interested in.` }]
-    }],
-  });
+  try {
+    const result = await modelInstance.generateContent({
+      contents: [{
+        role: "user",
+        parts: [{ text: `Based on these recent student queries: ${chatHistory.join(", ")}. 
+          Provide 3 short follow-up topics or questions they might be interested in. 
+          Return as a JSON array of strings.` }]
+      }],
+    });
 
-  const response = await result.response;
-  const text = response.text();
-  if (!text) return [];
-  return JSON.parse(text);
+    const response = await result.response;
+    const text = response.text();
+    if (!text) return [];
+    return JSON.parse(text);
+  } catch (err) {
+    return [];
+  }
 };
