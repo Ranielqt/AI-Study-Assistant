@@ -1,23 +1,24 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { QuizQuestion } from "../types";
 
 let aiInstance: GoogleGenAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    
+    // Follow skill instruction: React (Vite) uses process.env.GEMINI_API_KEY
+    const apiKey = (process as any).env?.GEMINI_API_KEY;
     if (!apiKey) {
-      console.warn("GEMINI_API_KEY is missing in process.env. AI features may fail.");
+      console.warn("GEMINI_API_KEY is missing from environment. This is expected if secrets are not set.");
     }
-    aiInstance = new GoogleGenAI({ apiKey: apiKey || '' });
+    aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
   }
   return aiInstance;
 }
 
+const MODEL_TO_USE = "gemini-3-flash-preview";
+
 /**
- * Cap history to avoid hitting Token limits (TPM) and saving cost/quota.
- * Keeps the last 10 turns (20 messages).
+ * Cap history to avoid hitting Token limits.
  */
 const capHistory = (history: any[]) => {
   if (history.length > 20) {
@@ -26,20 +27,17 @@ const capHistory = (history: any[]) => {
   return history;
 };
 
-const DEFAULT_MODEL = "gemini-2.0-flash";
-
 export const generateStudyResponse = async (
   question: string, 
-  history: { role: "user" | "model", parts: { text: string }[] }[],
+  history: any[],
   file?: { data: string, mimeType: string }
 ) => {
   try {
     const ai = getAI();
-    const contents = capHistory([...history]);
-    const currentParts: any[] = [{ text: question }];
     
+    const parts: any[] = [{ text: question }];
     if (file) {
-      currentParts.push({
+      parts.push({
         inlineData: {
           data: file.data.split(',')[1] || file.data,
           mimeType: file.mimeType
@@ -47,22 +45,25 @@ export const generateStudyResponse = async (
       });
     }
     
-    contents.push({ role: "user", parts: currentParts });
+    // Format history exactly as expected by @google/genai
+    const contents = history.map(h => ({
+      role: h.role,
+      parts: h.parts.map((p: any) => ({ text: p.text }))
+    }));
+    
+    contents.push({ role: "user", parts });
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
+      model: MODEL_TO_USE,
       contents,
       config: {
-        systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Keep responses focused and readable.",
+        systemInstruction: "You are a helpful AI Study Assistant. Keep responses focused and readable.",
       }
     });
 
-    return response.text || "I'm sorry, I couldn't generate a response at this time.";
+    return response.text; // Use .text property, not .text()
   } catch (err: any) {
-    console.error("AI Error:", err);
-    if (err.message?.includes('429') || err.message?.includes('quota')) {
-      throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
-    }
+    console.error("AI SDK Error:", err);
     throw err;
   }
 };
@@ -74,11 +75,10 @@ export const generateChatStream = async (
 ) => {
   try {
     const ai = getAI();
-    const contents = capHistory([...history]);
-    const currentParts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
-    
+
+    const parts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
     if (file) {
-      currentParts.push({
+      parts.push({
         inlineData: {
           data: file.data.split(',')[1] || file.data,
           mimeType: file.mimeType
@@ -86,20 +86,23 @@ export const generateChatStream = async (
       });
     }
 
-    contents.push({ role: "user", parts: currentParts });
+    const contents = capHistory(history).map(h => ({
+      role: h.role,
+      parts: h.parts.map((p: any) => ({ text: p.text }))
+    }));
 
+    contents.push({ role: "user", parts });
+
+    // Use generateContentStream
     return await ai.models.generateContentStream({
-      model: DEFAULT_MODEL,
+      model: MODEL_TO_USE,
       contents,
       config: {
-        systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString()} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting. If a file is attached, analyze its content.`,
+        systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Use markdown.",
       }
     });
   } catch (err: any) {
-    console.error("AI Stream Error:", err);
-    if (err.message?.includes('429') || err.message?.includes('quota')) {
-      throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
-    }
+    console.error("AI Stream SDK Error:", err);
     throw err;
   }
 };
@@ -107,8 +110,9 @@ export const generateChatStream = async (
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
   try {
     const ai = getAI();
+    
     const parts: any[] = [
-      { text: `Summarize the following notes from the file "${fileName}" in 100-200 words. Focus on key concepts and main takeaways.` }
+      { text: `Summarize the following notes from "${fileName}" in 100-200 words. Key takeaways only.` }
     ];
 
     if (fileData) {
@@ -123,32 +127,25 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
     }
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ role: "user", parts }],
-      config: {
-        systemInstruction: "You are an expert at academic summarization. Provide a clear, bulleted summary of the provided text/file.",
-      }
+      model: MODEL_TO_USE,
+      contents: [{ role: "user", parts }]
     });
 
-    return response.text || "Unable to generate summary for this file.";
-  } catch (err: any) {
-    console.error("AI Summarize Error:", err);
-    if (err.message?.includes('429') || err.message?.includes('quota')) {
-      throw new Error("AI Quota Exceeded (Free Tier). Please wait a minute and try again.");
-    }
-    throw err;
+    return response.text;
+  } catch (err) {
+    console.error("Summarize Error:", err);
+    return "Could not generate summary.";
   }
 };
 
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   try {
     const ai = getAI();
-    const parts: any[] = [{ 
-      text: `Generate 5 multiple-choice questions based on the following topic or content: "${topicOrContent}". 
-      Each question should have exactly 4 options. 
-      Include a brief explanation for the correct answer.` 
-    }];
+    
+    const prompt = `Generate 5 multiple-choice questions about: "${topicOrContent}". 
+    Return as a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
 
+    const parts: any[] = [{ text: prompt }];
     if (file) {
       parts.push({
         inlineData: {
@@ -159,67 +156,39 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
     }
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
+      model: MODEL_TO_USE,
       contents: [{ role: "user", parts }],
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              options: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING },
-              },
-              correctAnswer: { type: Type.INTEGER, description: "Index of the correct option (0-3)" },
-              explanation: { type: Type.STRING }
-            },
-            required: ["question", "options", "correctAnswer", "explanation"]
-          }
-        }
+        responseMimeType: "application/json"
       }
     });
 
     const text = response.text;
-    if (!text) throw new Error("Failed to generate quiz");
+    if (!text) throw new Error("No response from AI");
     return JSON.parse(text);
-  } catch (err: any) {
-    console.error("AI Quiz Error:", err);
-    if (err.message?.includes('429') || err.message?.includes('quota')) {
-      throw new Error("AI Quota Exceeded (Free Tier). Please wait a minute and try again.");
-    }
+  } catch (err) {
+    console.error("Quiz Error:", err);
     throw err;
   }
 };
 
 export const getSmartRecommendations = async (chatHistory: string[]) => {
-  if (chatHistory.length < 3) return [];
-
   try {
     const ai = getAI();
+    const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
+    
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{
-        role: "user",
-        parts: [{ text: `Based on these recent student queries: ${chatHistory.join(", ")}. 
-        Suggest 3 relevant follow-up questions or study topics the student might be interested in.` }]
-      }],
+      model: MODEL_TO_USE,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
+        responseMimeType: "application/json"
       }
     });
 
     const text = response.text;
     if (!text) return [];
     return JSON.parse(text);
-  } catch (err) {
-    console.error("Recommendations error:", err);
+  } catch {
     return [];
   }
 };
