@@ -70,10 +70,7 @@ export default function Chatbot() {
 
     if (data) {
       setMessages(data);
-      if (data.length >= 3) {
-        const recs = await getSmartRecommendations(data.slice(-5).map(m => m.question));
-        setRecommendations(recs);
-      }
+      // Removed automatic recommendation call on mount to save quota
     }
   };
 
@@ -141,7 +138,7 @@ export default function Chatbot() {
       const contents = [...history, { role: "user", parts: currentParts }];
 
       const result = await ai.models.generateContentStream({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         contents,
         config: {
           systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting for readability. If a file is attached, analyze its content to provide the best answer.`,
