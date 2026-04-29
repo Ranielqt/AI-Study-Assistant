@@ -18,7 +18,7 @@ export function getAI() {
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-3-flash-preview";
+const MODEL_TO_USE = "gemini-1.5-flash-8b";
 
 /**
  * Cap history to avoid hitting Token limits.
