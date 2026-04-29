@@ -5,16 +5,18 @@ let aiInstance: GoogleGenAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // Try to get apiKey from multiple possible sources in Vite/Node
+    // Priority 1: VITE_ prefixed (Required for Vercel/Vite frontend)
+    // Priority 2: GEMINI_API_KEY (Server-side/CI) fallback
     const apiKey = 
       (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-      (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : '') ||
-      (typeof window !== 'undefined' ? (window as any).VITE_GEMINI_API_KEY : '');
+      (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : '');
     
-    if (!apiKey || apiKey === 'your_actual_gemini_api_key_here') {
-      throw new Error("GEMINI_API_KEY is missing. If running locally: \n1. Add VITE_GEMINI_API_KEY=your_key to your .env file\n2. RESTART your dev server (npm run dev)");
+    if (!apiKey || apiKey.length < 10) {
+      console.error("CRITICAL: GEMINI_API_KEY is missing. \n" + 
+        "If you are on Vercel, you MUST name your environment variable 'VITE_GEMINI_API_KEY'. \n" +
+        "Variables without the VITE_ prefix are hidden from the browser.");
     }
-    aiInstance = new GoogleGenAI({ apiKey });
+    aiInstance = new GoogleGenAI({ apiKey: apiKey || '' });
   }
   return aiInstance;
 }
@@ -26,6 +28,17 @@ export interface FilePart {
   };
 }
 
+/**
+ * Cap history to avoid hitting Token limits (TPM) and saving cost/quota.
+ * Keeps the last 10 turns (20 messages).
+ */
+const capHistory = (history: any[]) => {
+  if (history.length > 20) {
+    return history.slice(-20);
+  }
+  return history;
+};
+
 export const generateStudyResponse = async (
   question: string, 
   history: { role: "user" | "model", parts: { text: string }[] }[],
@@ -34,7 +47,7 @@ export const generateStudyResponse = async (
   const model = "gemini-1.5-flash-latest";
   const ai = getAI();
   
-  const contents = [...history];
+  const contents = capHistory([...history]);
   const currentParts: any[] = [{ text: question }];
   
   if (file) {
@@ -48,15 +61,60 @@ export const generateStudyResponse = async (
   
   contents.push({ role: "user", parts: currentParts });
 
-  const response = await ai.models.generateContent({
-    model,
-    contents,
-    config: {
-      systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting for readability. If a file is attached, analyze its content to provide the best answer.`,
-    },
-  });
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config: {
+        systemInstruction: `You are a helpful AI Study Assistant. Help the student understand their material. Keep responses focused and readable.`,
+      },
+    });
 
-  return response.text || "I'm sorry, I couldn't generate a response at this time.";
+    return response.text || "I'm sorry, I couldn't generate a response at this time.";
+  } catch (err: any) {
+    if (err.message?.includes('429') || err.message?.includes('quota')) {
+      throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
+    }
+    throw err;
+  }
+};
+
+export const generateChatStream = async (
+  question: string,
+  history: any[],
+  file?: { data: string, mimeType: string }
+) => {
+  const ai = getAI();
+  const model = "gemini-1.5-flash-latest";
+  
+  const contents = capHistory([...history]);
+  const currentParts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
+  
+  if (file) {
+    currentParts.push({
+      inlineData: {
+        data: file.data.split(',')[1] || file.data,
+        mimeType: file.mimeType
+      }
+    });
+  }
+
+  contents.push({ role: "user", parts: currentParts });
+
+  try {
+    return await ai.models.generateContentStream({
+      model,
+      contents,
+      config: {
+        systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString()} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting. If a file is attached, analyze its content.`,
+      },
+    });
+  } catch (err: any) {
+    if (err.message?.includes('429') || err.message?.includes('quota')) {
+      throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
+    }
+    throw err;
+  }
 };
 
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {

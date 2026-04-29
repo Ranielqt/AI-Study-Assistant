@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { generateStudyResponse, getSmartRecommendations, getAI } from '../lib/aiAPI';
+import { generateStudyResponse, getSmartRecommendations, getAI, generateChatStream } from '../lib/aiAPI';
 import { Chat as ChatType } from '../types';
 import { Send, Loader2, Sparkles, Bot, Clock, Paperclip, X, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -124,26 +124,7 @@ export default function Chatbot() {
         { role: "model" as const, parts: [{ text: m.answer }] }
       ])).flat();
 
-      const ai = getAI();
-      const currentParts: any[] = [{ text: currentInput || (currentFile ? `Analyze this file: ${currentFile.name}` : "") }];
-      if (currentFile) {
-        currentParts.push({
-          inlineData: {
-            data: currentFile.data.split(',')[1] || currentFile.data,
-            mimeType: currentFile.mimeType
-          }
-        });
-      }
-
-      const contents = [...history, { role: "user", parts: currentParts }];
-
-      const result = await ai.models.generateContentStream({
-        model: "gemini-2.0-flash",
-        contents,
-        config: {
-          systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting for readability. If a file is attached, analyze its content to provide the best answer.`,
-        },
-      });
+      const result = await generateChatStream(currentInput, history, currentFile || undefined);
 
       let fullResponse = "";
       for await (const chunk of result) {
@@ -169,18 +150,23 @@ export default function Chatbot() {
       if (data) {
         setMessages(prev => prev.map(m => m.id === tempId ? data : m));
         
-        if (messages.length + 1 >= 3) {
-          const recs = await getSmartRecommendations([...messages, data].slice(-5).map(m => m.question));
-          setRecommendations(recs);
-        }
+        // Removed automatic recommendations to save API quota
+        // if (messages.length + 1 >= 3) {
+        //   const recs = await getSmartRecommendations([...messages, data].slice(-5).map(m => m.question));
+        //   setRecommendations(recs);
+        // }
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Full AI Error:", err);
       
-      let friendlyError = err.message;
+      let friendlyError = err.message || "An unexpected error occurred.";
       try {
-        const parsed = typeof err.message === 'string' ? JSON.parse(err.message) : err;
-        if (parsed.error?.code === 429 || parsed.status === "RESOURCE_EXHAUSTED") {
+        // Attempt to parse structured error messages
+        const parsed = typeof err.message === 'string' && err.message.startsWith('{') 
+          ? JSON.parse(err.message) 
+          : err;
+
+        if (parsed.error?.code === 429 || parsed.status === "RESOURCE_EXHAUSTED" || err.message?.includes('429')) {
           friendlyError = "AI Quota Exceeded. You've reached the free limit for today. Please wait a few minutes or try again later.";
         } else if (parsed.error?.message) {
           friendlyError = parsed.error.message;
