@@ -26,7 +26,7 @@ const capHistory = (history: any[]) => {
   return history;
 };
 
-const DEFAULT_MODEL = "gemini-3-flash-preview";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
 export const generateStudyResponse = async (
   question: string, 
