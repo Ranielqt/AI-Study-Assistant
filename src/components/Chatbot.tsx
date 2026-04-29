@@ -138,7 +138,7 @@ export default function Chatbot() {
       const contents = [...history, { role: "user", parts: currentParts }];
 
       const result = await ai.models.generateContentStream({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.0-flash",
         contents,
         config: {
           systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting for readability. If a file is attached, analyze its content to provide the best answer.`,
