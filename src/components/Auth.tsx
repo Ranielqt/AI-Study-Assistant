@@ -25,14 +25,23 @@ export default function Auth({ onSuccess }: AuthProps) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setError("Sign up successful! Please check your email for verification.");
+        
+        if (data.user && data.session === null) {
+          setError("Verification required: We've sent a link to your email. Please confirm it to finish setting up your account.");
+        } else {
+          onSuccess();
+        }
         return;
       }
       onSuccess();
     } catch (err: any) {
-      setError(err.message);
+      let friendlyError = err.message;
+      if (err.message?.includes('rate limit')) {
+        friendlyError = "Sign-up email limit reached (2 per hour for free Supabase tier). To fix this, go to your Supabase Project -> Authentication -> Providers -> Email and DISABLE 'Confirm email'.";
+      }
+      setError(friendlyError);
     } finally {
       setLoading(false);
     }
