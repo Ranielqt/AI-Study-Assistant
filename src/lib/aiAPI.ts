@@ -1,31 +1,20 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { QuizQuestion } from "../types";
 
-let aiInstance: GoogleGenAI | null = null;
+let aiInstance: GoogleGenerativeAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // Priority 1: VITE_ prefixed (Required for Vercel/Vite frontend)
-    // Priority 2: GEMINI_API_KEY (Server-side/CI) fallback
     const apiKey = 
       (import.meta as any).env?.VITE_GEMINI_API_KEY || 
       (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : '');
     
     if (!apiKey || apiKey.length < 10) {
-      console.error("CRITICAL: GEMINI_API_KEY is missing. \n" + 
-        "If you are on Vercel, you MUST name your environment variable 'VITE_GEMINI_API_KEY'. \n" +
-        "Variables without the VITE_ prefix are hidden from the browser.");
+      console.error("CRITICAL: GEMINI_API_KEY is missing.");
     }
-    aiInstance = new GoogleGenAI({ apiKey: apiKey || '' });
+    aiInstance = new GoogleGenerativeAI(apiKey || '');
   }
   return aiInstance;
-}
-
-export interface FilePart {
-  inlineData: {
-    data: string;
-    mimeType: string;
-  };
 }
 
 /**
@@ -45,7 +34,7 @@ export const generateStudyResponse = async (
   file?: { data: string, mimeType: string }
 ) => {
   const model = "gemini-1.5-flash";
-  const ai = getAI();
+  const genAI = getAI();
   
   const contents = capHistory([...history]);
   const currentParts: any[] = [{ text: question }];
@@ -62,15 +51,17 @@ export const generateStudyResponse = async (
   contents.push({ role: "user", parts: currentParts });
 
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction: `You are a helpful AI Study Assistant. Help the student understand their material. Keep responses focused and readable.`,
-      },
+    const modelInstance = genAI.getGenerativeModel({
+      model: model,
+      systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Keep responses focused and readable.",
     });
 
-    return response.text || "I'm sorry, I couldn't generate a response at this time.";
+    const result = await modelInstance.generateContent({
+      contents,
+    });
+
+    const response = await result.response;
+    return response.text() || "I'm sorry, I couldn't generate a response at this time.";
   } catch (err: any) {
     if (err.message?.includes('429') || err.message?.includes('quota')) {
       throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
@@ -84,7 +75,7 @@ export const generateChatStream = async (
   history: any[],
   file?: { data: string, mimeType: string }
 ) => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const contents = capHistory([...history]);
@@ -102,13 +93,16 @@ export const generateChatStream = async (
   contents.push({ role: "user", parts: currentParts });
 
   try {
-    return await ai.models.generateContentStream({
-      model,
-      contents,
-      config: {
-        systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString()} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting. If a file is attached, analyze its content.`,
-      },
+    const modelInstance = genAI.getGenerativeModel({
+      model: model,
+      systemInstruction: `You are a helpful AI Study Assistant. Today's date is ${new Date().toLocaleDateString()} and the current time is ${new Date().toLocaleTimeString()}. Answer the student's questions clearly and concisely. Use markdown formatting. If a file is attached, analyze its content.`,
     });
+
+    const result = await modelInstance.generateContentStream({
+      contents,
+    });
+
+    return result.stream;
   } catch (err: any) {
     if (err.message?.includes('429') || err.message?.includes('quota')) {
       throw new Error("AI Quota Exceeded. Please wait 60 seconds.");
@@ -118,7 +112,7 @@ export const generateChatStream = async (
 };
 
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const parts: any[] = [
@@ -132,20 +126,24 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
         mimeType: fileData.mimeType
       }
     });
-  } else if (textContent) {
+  }
+
+  if (textContent) {
     parts.push({ text: `Content:\n${textContent}` });
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: [{ role: "user", parts }],
-      config: {
-        systemInstruction: "You are an expert at academic summarization. Provide a clear, bulleted summary of the provided text/file.",
-      },
+    const modelInstance = genAI.getGenerativeModel({
+      model: model,
+      systemInstruction: "You are an expert at academic summarization. Provide a clear, bulleted summary of the provided text/file.",
     });
 
-    return response.text || "Unable to generate summary for this file.";
+    const result = await modelInstance.generateContent({
+      contents: [{ role: "user", parts }],
+    });
+
+    const response = await result.response;
+    return response.text() || "Unable to generate summary for this file.";
   } catch (err: any) {
     if (err.message?.includes('429') || err.message?.includes('quota')) {
       throw new Error("AI Quota Exceeded (Free Tier). Please wait a minute and try again.");
@@ -155,13 +153,12 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 };
 
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
   const parts: any[] = [{ 
     text: `Generate 5 multiple-choice questions based on the following topic or content: "${topicOrContent}". 
-    Each question should have exactly 4 options. 
-    Include a brief explanation for the correct answer.` 
+    Return the response as a JSON array where each object has: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.` 
   }];
 
   if (file) {
@@ -174,28 +171,22 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: [{ 
-        role: "user", 
-        parts
-      }],
-      config: {
+    const modelInstance = genAI.getGenerativeModel({
+      model: model,
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
+          type: SchemaType.ARRAY,
           items: {
-            type: Type.OBJECT,
+            type: SchemaType.OBJECT,
             properties: {
-              question: { type: Type.STRING },
+              question: { type: SchemaType.STRING },
               options: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING },
-                minItems: 4,
-                maxItems: 4
+                type: SchemaType.ARRAY, 
+                items: { type: SchemaType.STRING },
               },
-              correctAnswer: { type: Type.INTEGER, description: "Index of the correct option (0-3)" },
-              explanation: { type: Type.STRING }
+              correctAnswer: { type: SchemaType.NUMBER, description: "Index of the correct option (0-3)" },
+              explanation: { type: SchemaType.STRING }
             },
             required: ["question", "options", "correctAnswer", "explanation"]
           }
@@ -203,7 +194,15 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
       }
     });
 
-    const text = response.text;
+    const result = await modelInstance.generateContent({
+      contents: [{ 
+        role: "user", 
+        parts
+      }],
+    });
+
+    const response = await result.response;
+    const text = response.text();
     if (!text) throw new Error("Failed to generate quiz");
     return JSON.parse(text);
   } catch (err: any) {
@@ -217,26 +216,35 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
 export const getSmartRecommendations = async (chatHistory: string[]) => {
   if (chatHistory.length < 3) return [];
 
-  const ai = getAI();
+  const genAI = getAI();
   const model = "gemini-1.5-flash";
   
-  const response = await ai.models.generateContent({
-    model,
-    contents: [{
-      role: "user",
-      parts: [{ text: `Based on these recent student queries: ${chatHistory.join(", ")}. 
-      Suggest 3 relevant follow-up questions or study topics the student might be interested in.` }]
-    }],
-    config: {
+  const modelInstance = genAI.getGenerativeModel({
+    model: model,
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING }
+        type: SchemaType.ARRAY,
+        items: { type: SchemaType.STRING }
       }
     }
   });
+  
+  try {
+    const result = await modelInstance.generateContent({
+      contents: [{
+        role: "user",
+        parts: [{ text: `Based on these recent student queries: ${chatHistory.join(", ")}. 
+          Provide 3 short follow-up topics or questions they might be interested in. 
+          Return as a JSON array of strings.` }]
+      }],
+    });
 
-  const text = response.text;
-  if (!text) return [];
-  return JSON.parse(text);
+    const response = await result.response;
+    const text = response.text();
+    if (!text) return [];
+    return JSON.parse(text);
+  } catch (err) {
+    return [];
+  }
 };
