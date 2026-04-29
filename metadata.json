@@ -1,0 +1,6 @@
+{
+  "name": "AI Study Assistant",
+  "description": "A comprehensive study companion featuring AI-powered chat, note summarization, and quiz generation using Supabase and Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
