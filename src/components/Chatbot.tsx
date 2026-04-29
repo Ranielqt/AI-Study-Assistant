@@ -202,7 +202,7 @@ export default function Chatbot() {
             <Bot size={24} />
           </div>
           <div>
-            <h2 className="font-black text-slate-900 tracking-tight">AI Tutor</h2>
+            <h2 className="font-black text-slate-900 tracking-tight">AI Tutor v3.0</h2>
             <div className="flex items-center gap-3 mt-0.5">
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse" />
