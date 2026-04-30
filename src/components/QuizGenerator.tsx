@@ -70,7 +70,6 @@ export default function QuizGenerator() {
     setGenerating(true);
     setError(null);
     try {
-      // Pass the file data if attached, otherwise just the source text
       const questions = await generateQuiz(
         source, 
         attachedFile ? { data: attachedFile.data, mimeType: attachedFile.mimeType } : undefined
@@ -87,7 +86,7 @@ export default function QuizGenerator() {
         }])
         .select()
         .single();
-// ...
+
       if (data) {
         setQuizzes(prev => [data, ...prev]);
         setAttachedFile(null);
