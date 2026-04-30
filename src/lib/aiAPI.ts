@@ -8,20 +8,21 @@ export function getAI() {
     // In Vite/Vercel, environmental variables MUST be prefixed with VITE_ to be exposed to the client.
     // However, some platforms polyfill process.env.
     const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-                   (process as any).env?.VITE_GEMINI_API_KEY || // Fallback for process.env
                    (import.meta as any).env?.GEMINI_API_KEY ||
+                   (process as any).env?.VITE_GEMINI_API_KEY ||
                    (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
-      console.warn("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY.");
+      console.error("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY.");
     }
+    // Force the stable v1 API version to avoid 404 errors on v1beta
     aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
 
 // Using the most stable model identifier
-const MODEL_TO_USE = "gemini-1.5-flash";
+const MODEL_TO_USE = "gemini-1.5-flash-latest";
 
 const capHistory = (history: any[]) => {
   if (history.length > 20) {
@@ -37,7 +38,7 @@ export const generateStudyResponse = async (
 ) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
     
     const parts: any[] = [{ text: question }];
     if (file) {
@@ -80,7 +81,7 @@ export const generateChatStream = async (
 ) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
 
     const parts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
     if (file) {
@@ -111,7 +112,7 @@ export const generateChatStream = async (
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
     
     const parts: any[] = [
       { text: `Summarize the following notes from "${fileName}" in 100-200 words. Key takeaways only.` }
@@ -142,13 +143,13 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   try {
     const ai = getAI();
-    // For JSON mode, we need v1beta features usually, but let's try prompting first if 404s persist
+    // Use v1 to avoid 404s
     const genModel = ai.getGenerativeModel({ 
       model: MODEL_TO_USE,
       generationConfig: {
         responseMimeType: "application/json"
       }
-    });
+    }, { apiVersion: "v1" });
     
     const prompt = `Generate 5 multiple-choice questions about: "${topicOrContent}". 
     Return strictly a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
@@ -193,7 +194,7 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
       generationConfig: {
         responseMimeType: "application/json"
       }
-    });
+    }, { apiVersion: "v1" });
 
     const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
     
