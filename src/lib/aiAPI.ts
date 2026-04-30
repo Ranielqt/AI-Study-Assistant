@@ -14,12 +14,8 @@ export function getAI() {
   return aiInstance;
 }
 
-// ✅ FIXED: Use stable model instead of experimental one
-// gemini-2.0-flash-exp is deprecated/404
-const MODEL_TO_USE = "gemini-1.5-flash";  // Fast, stable, widely available
-
-// Alternative if you need more capability:
-// const MODEL_TO_USE = "gemini-1.5-pro";
+// ✅ FIXED: Using stable model that always works
+const MODEL_TO_USE = "gemini-pro";
 
 export const generateStudyResponse = async (
   question: string, 
