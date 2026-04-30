@@ -57,7 +57,10 @@ export default function Dashboard() {
               <GraduationCap size={28} />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 leading-none">AI Study</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black text-slate-900 leading-none">AI Study</h1>
+                <span className="bg-indigo-600 text-white text-[8px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-tighter">v2.0</span>
+              </div>
               <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Assistant</p>
             </div>
           </div>
