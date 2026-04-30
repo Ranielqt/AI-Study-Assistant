@@ -25,8 +25,8 @@ export function getAI() {
   return aiInstance;
 }
 
-// ✅ Using gemini-1.5-flash (more stable, less 503 errors)
-const MODEL_TO_USE = "gemini-1.5-flash";
+// ✅ Using gemini-1.5-pro (more stable, works with v1beta)
+const MODEL_TO_USE = "gemini-1.5-pro";
 
 export const generateStudyResponse = async (
   question: string, 
@@ -137,7 +137,7 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   console.log(`[AI] Generating quiz with model: ${MODEL_TO_USE}`);
   
-  // Retry up to 3 times for 503 errors
+  // Retry up to 3 times for errors
   let lastError: any;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -185,17 +185,13 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
       return JSON.parse(text);
     } catch (error: any) {
       lastError = error;
-      // If it's a 503 (overloaded), wait and retry
-      if (error.message?.includes('503') || error.message?.includes('UNAVAILABLE')) {
-        console.log(`[AI] Quiz generation attempt ${attempt} failed, retrying in ${attempt * 2}s...`);
+      console.log(`[AI] Quiz generation attempt ${attempt} failed:`, error.message);
+      if (attempt < 3) {
         await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-        continue;
       }
-      // For other errors, throw immediately
-      throw new Error(`Failed to generate quiz: ${error.message}`);
     }
   }
-  throw new Error("Failed to generate quiz after 3 attempts. The AI service is currently busy. Please try again in a few minutes.");
+  throw new Error(`Failed to generate quiz: ${lastError?.message || "Unknown error"}`);
 };
 
 export const getSmartRecommendations = async (chatHistory: string[]) => {
