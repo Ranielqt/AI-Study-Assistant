@@ -14,8 +14,9 @@ export function getAI() {
   return aiInstance;
 }
 
-// ✅ FIXED: Using stable model that always works
-const MODEL_TO_USE = "gemini-pro";
+// ✅ FIXED: Using currently supported Gemini 2.5 model
+// gemini-pro is deprecated and no longer available
+const MODEL_TO_USE = "gemini-2.5-flash";
 
 export const generateStudyResponse = async (
   question: string, 
