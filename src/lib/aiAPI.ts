@@ -1,17 +1,20 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { QuizQuestion } from "../types";
 
-let aiInstance: GoogleGenAI | null = null;
+let aiInstance: GoogleGenerativeAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
     // Check for VITE_ prefix (standard for Vite/Vercel client) first, then fallback to platform key
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (process as any).env?.GEMINI_API_KEY;
+    // Note: process.env.GEMINI_API_KEY is often polyfilled during build or provided in AI Studio
+    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
+                   (import.meta as any).env?.GEMINI_API_KEY ||
+                   (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
       console.warn("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
     }
-    aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
+    aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
