@@ -11,14 +11,15 @@ export function getAI() {
   return aiInstance;
 }
 
-// Model suggested by the coding guidelines for text tasks
-const MODEL_TO_USE = "gemini-3-flash-preview";
+// Use a highly stable alias
+const MODEL_TO_USE = "gemini-2.0-flash-exp";
 
 export const generateStudyResponse = async (
   question: string, 
   history: any[],
   file?: { data: string, mimeType: string }
 ) => {
+  console.log(`[AI] Generating response with model: ${MODEL_TO_USE}`);
   const ai = getAI();
   const parts: any[] = [{ text: question }];
   if (file) {
@@ -48,6 +49,7 @@ export const generateChatStream = async (
   history: any[],
   file?: { data: string, mimeType: string }
 ) => {
+  console.log(`[AI] Generating stream with model: ${MODEL_TO_USE}`);
   const ai = getAI();
   const parts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
   if (file) {
@@ -71,6 +73,7 @@ export const generateChatStream = async (
 };
 
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
+  console.log(`[AI] Summarizing notes with model: ${MODEL_TO_USE}`);
   const ai = getAI();
   const parts: any[] = [
     { text: `Summarize the following notes from "${fileName}" in 100-200 words. Key takeaways only.` }
@@ -96,6 +99,7 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 };
 
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
+  console.log(`[AI] Generating quiz with model: ${MODEL_TO_USE}`);
   const ai = getAI();
   const prompt = `Generate 5 multiple-choice questions about: "${topicOrContent}". 
   Return strictly a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
@@ -140,6 +144,7 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
 };
 
 export const getSmartRecommendations = async (chatHistory: string[]) => {
+  console.log(`[AI] Getting recommendations with model: ${MODEL_TO_USE}`);
   const ai = getAI();
   const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
   
