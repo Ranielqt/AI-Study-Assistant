@@ -5,21 +5,19 @@ let aiInstance: GoogleGenerativeAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // Check for VITE_ prefix (standard for Vite/Vercel client) first, then fallback to platform key
-    // Note: process.env.GEMINI_API_KEY is often polyfilled during build or provided in AI Studio
+    // In Vercel/Vite, client-side env vars MUST start with VITE_
     const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-                   (import.meta as any).env?.GEMINI_API_KEY ||
                    (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
-      console.warn("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
+      console.error("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
     }
     aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-1.5-flash";
+const MODEL_TO_USE = "gemini-1.5-flash"; // Stable identifier
 
 /**
  * Cap history to avoid hitting Token limits.
@@ -49,7 +47,6 @@ export const generateStudyResponse = async (
       });
     }
     
-    // Format history exactly as expected by @google/genai
     const contents = history.map(h => ({
       role: h.role,
       parts: h.parts.map((p: any) => ({ text: p.text }))
