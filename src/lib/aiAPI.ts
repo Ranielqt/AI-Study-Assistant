@@ -7,17 +7,19 @@ export function getAI() {
   if (!aiInstance) {
     // In Vercel/Vite, client-side env vars MUST start with VITE_
     const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
+                   (import.meta as any).env?.GEMINI_API_KEY ||
                    (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
       console.error("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
     }
+    // Using the stable GoogleGenerativeAI constructor
     aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-1.5-flash"; // Stable identifier
+const MODEL_TO_USE = "gemini-1.5-flash"; // Standard stable model identifier
 
 /**
  * Cap history to avoid hitting Token limits.
@@ -47,6 +49,7 @@ export const generateStudyResponse = async (
       });
     }
     
+    // Format history exactly as expected by @google/genai
     const contents = history.map(h => ({
       role: h.role,
       parts: h.parts.map((p: any) => ({ text: p.text }))
