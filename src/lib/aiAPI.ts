@@ -5,20 +5,18 @@ let aiInstance: GoogleGenAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // In Vite/Vercel, we prefer VITE_GEMINI_API_KEY for client-side exposure.
-    // In AI Studio preview, GEMINI_API_KEY is often polyfilled into process.env.
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-                   (process as any).env?.GEMINI_API_KEY;
+    // In AI Studio preview, GEMINI_API_KEY is polyfilled into process.env.
+    const apiKey = (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
-      console.warn("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
+      console.warn("GEMINI_API_KEY is missing. AI features will fail.");
     }
     aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
   }
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-1.5-flash-8b";
+const MODEL_TO_USE = "gemini-3-flash-preview";
 
 /**
  * Cap history to avoid hitting Token limits.
