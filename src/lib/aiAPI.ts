@@ -5,24 +5,22 @@ let aiInstance: GoogleGenerativeAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // In Vite/Vercel, environmental variables MUST be prefixed with VITE_ to be exposed to the client.
-    // However, some platforms polyfill process.env.
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-                   (import.meta as any).env?.GEMINI_API_KEY ||
-                   (process as any).env?.VITE_GEMINI_API_KEY ||
-                   (process as any).env?.GEMINI_API_KEY;
+    // Standard access for Vite/Vercel and local environments
+    const apiKey = import.meta.env?.VITE_GEMINI_API_KEY || 
+                   process.env?.VITE_GEMINI_API_KEY ||
+                   import.meta.env?.GEMINI_API_KEY ||
+                   process.env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
-      console.error("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY.");
+      console.error("Missing Gemini API Key. Ensure VITE_GEMINI_API_KEY is defined.");
     }
-    // Force the stable v1 API version to avoid 404 errors on v1beta
     aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
 
 // Using the most stable model identifier
-const MODEL_TO_USE = "gemini-1.5-flash-latest";
+const MODEL_TO_USE = "gemini-1.5-flash";
 
 const capHistory = (history: any[]) => {
   if (history.length > 20) {
@@ -57,8 +55,6 @@ export const generateStudyResponse = async (
     
     contents.push({ role: "user", parts });
 
-    // Prepend system instruction as a user message if systemInstruction causes 404 in v1beta
-    // or just use it the standard way. Let's try standard first but with the latest SDK pattern.
     const chat = genModel.startChat({
       history: contents.slice(0, -1),
       generationConfig: {
@@ -143,7 +139,6 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   try {
     const ai = getAI();
-    // Use v1 to avoid 404s
     const genModel = ai.getGenerativeModel({ 
       model: MODEL_TO_USE,
       generationConfig: {
@@ -171,7 +166,6 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
     const text = result.response.text();
     if (!text) throw new Error("No response from AI");
     
-    // Clean JSON if needed (sometimes wrapped in markdown code blocks)
     let cleanedText = text.trim();
     if (cleanedText.startsWith("```json")) {
       cleanedText = cleanedText.replace(/^```json/, "").replace(/```$/, "").trim();

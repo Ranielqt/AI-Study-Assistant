@@ -127,8 +127,8 @@ export default function Chatbot() {
       const result = await generateChatStream(currentInput, history, currentFile || undefined);
 
       let fullResponse = "";
-      for await (const chunk of result) {
-        const chunkText = chunk.text;
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
         if (chunkText) {
           fullResponse += chunkText;
           setMessages(prev => prev.map(m => m.id === tempId ? { ...m, answer: fullResponse } : m));
