@@ -26,7 +26,7 @@ export function getAI() {
 }
 
 // ✅ Using gemini-1.5-pro (more stable, works with v1beta)
-const MODEL_TO_USE = "gemini-1.5-pro";
+const MODEL_TO_USE = "gemini-2.0-flash";
 
 export const generateStudyResponse = async (
   question: string, 
