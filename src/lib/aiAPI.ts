@@ -5,25 +5,24 @@ let aiInstance: GoogleGenerativeAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // In Vercel/Vite, client-side env vars MUST start with VITE_
+    // In Vite/Vercel, environmental variables MUST be prefixed with VITE_ to be exposed to the client.
+    // However, some platforms polyfill process.env.
     const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
+                   (process as any).env?.VITE_GEMINI_API_KEY || // Fallback for process.env
                    (import.meta as any).env?.GEMINI_API_KEY ||
                    (process as any).env?.GEMINI_API_KEY;
                    
     if (!apiKey) {
-      console.error("GEMINI_API_KEY or VITE_GEMINI_API_KEY is missing. AI features will fail.");
+      console.warn("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY.");
     }
-    // Using the stable GoogleGenerativeAI constructor
     aiInstance = new GoogleGenerativeAI(apiKey || "");
   }
   return aiInstance;
 }
 
-const MODEL_TO_USE = "gemini-1.5-flash"; // Standard stable model identifier
+// Using the most stable model identifier
+const MODEL_TO_USE = "gemini-1.5-flash";
 
-/**
- * Cap history to avoid hitting Token limits.
- */
 const capHistory = (history: any[]) => {
   if (history.length > 20) {
     return history.slice(-20);
@@ -38,6 +37,7 @@ export const generateStudyResponse = async (
 ) => {
   try {
     const ai = getAI();
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
     
     const parts: any[] = [{ text: question }];
     if (file) {
@@ -49,23 +49,23 @@ export const generateStudyResponse = async (
       });
     }
     
-    // Format history exactly as expected by @google/genai
     const contents = history.map(h => ({
-      role: h.role,
+      role: h.role === 'assistant' ? 'model' : h.role, // SDK uses 'model' instead of 'assistant'
       parts: h.parts.map((p: any) => ({ text: p.text }))
     }));
     
     contents.push({ role: "user", parts });
 
-    const genModel = ai.getGenerativeModel({
-      model: MODEL_TO_USE,
-      systemInstruction: "You are a helpful AI Study Assistant. Keep responses focused and readable.",
+    // Prepend system instruction as a user message if systemInstruction causes 404 in v1beta
+    // or just use it the standard way. Let's try standard first but with the latest SDK pattern.
+    const chat = genModel.startChat({
+      history: contents.slice(0, -1),
+      generationConfig: {
+        maxOutputTokens: 1000,
+      },
     });
 
-    const result = await genModel.generateContent({
-      contents,
-    });
-
+    const result = await chat.sendMessage(contents[contents.length - 1].parts);
     return result.response.text();
   } catch (err: any) {
     console.error("AI SDK Error:", err);
@@ -80,6 +80,7 @@ export const generateChatStream = async (
 ) => {
   try {
     const ai = getAI();
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
 
     const parts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
     if (file) {
@@ -92,20 +93,15 @@ export const generateChatStream = async (
     }
 
     const contents = capHistory(history).map(h => ({
-      role: h.role,
+      role: h.role === 'assistant' ? 'model' : h.role,
       parts: h.parts.map((p: any) => ({ text: p.text }))
     }));
 
-    contents.push({ role: "user", parts });
-
-    const genModel = ai.getGenerativeModel({
-      model: MODEL_TO_USE,
-      systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Use markdown.",
+    const chat = genModel.startChat({
+      history: contents,
     });
 
-    return await genModel.generateContentStream({
-      contents,
-    });
+    return await chat.sendMessageStream(parts);
   } catch (err: any) {
     console.error("AI Stream SDK Error:", err);
     throw err;
@@ -115,6 +111,7 @@ export const generateChatStream = async (
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
   try {
     const ai = getAI();
+    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE });
     
     const parts: any[] = [
       { text: `Summarize the following notes from "${fileName}" in 100-200 words. Key takeaways only.` }
@@ -131,10 +128,6 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
       parts.push({ text: `Content:\n${textContent}` });
     }
 
-    const genModel = ai.getGenerativeModel({
-      model: MODEL_TO_USE,
-    });
-
     const result = await genModel.generateContent({
       contents: [{ role: "user", parts }]
     });
@@ -149,9 +142,16 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   try {
     const ai = getAI();
+    // For JSON mode, we need v1beta features usually, but let's try prompting first if 404s persist
+    const genModel = ai.getGenerativeModel({ 
+      model: MODEL_TO_USE,
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
+    });
     
     const prompt = `Generate 5 multiple-choice questions about: "${topicOrContent}". 
-    Return as a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
+    Return strictly a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
 
     const parts: any[] = [{ text: prompt }];
     if (file) {
@@ -163,20 +163,22 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
       });
     }
 
-    const genModel = ai.getGenerativeModel({
-      model: MODEL_TO_USE,
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    });
-
     const result = await genModel.generateContent({
       contents: [{ role: "user", parts }],
     });
 
     const text = result.response.text();
     if (!text) throw new Error("No response from AI");
-    return JSON.parse(text);
+    
+    // Clean JSON if needed (sometimes wrapped in markdown code blocks)
+    let cleanedText = text.trim();
+    if (cleanedText.startsWith("```json")) {
+      cleanedText = cleanedText.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (cleanedText.startsWith("```")) {
+      cleanedText = cleanedText.replace(/^```/, "").replace(/```$/, "").trim();
+    }
+    
+    return JSON.parse(cleanedText);
   } catch (err) {
     console.error("Quiz Error:", err);
     throw err;
@@ -186,14 +188,14 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
 export const getSmartRecommendations = async (chatHistory: string[]) => {
   try {
     const ai = getAI();
-    const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
-    
-    const genModel = ai.getGenerativeModel({
+    const genModel = ai.getGenerativeModel({ 
       model: MODEL_TO_USE,
       generationConfig: {
         responseMimeType: "application/json"
       }
     });
+
+    const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
     
     const result = await genModel.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -201,7 +203,13 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
 
     const text = result.response.text();
     if (!text) return [];
-    return JSON.parse(text);
+    
+    let cleanedText = text.trim();
+    if (cleanedText.startsWith("```json")) {
+      cleanedText = cleanedText.replace(/^```json/, "").replace(/```$/, "").trim();
+    }
+    
+    return JSON.parse(cleanedText);
   } catch {
     return [];
   }
