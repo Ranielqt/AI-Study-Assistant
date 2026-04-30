@@ -54,15 +54,16 @@ export const generateStudyResponse = async (
     
     contents.push({ role: "user", parts });
 
-    const response = await ai.models.generateContent({
+    const genModel = ai.getGenerativeModel({
       model: MODEL_TO_USE,
-      contents,
-      config: {
-        systemInstruction: "You are a helpful AI Study Assistant. Keep responses focused and readable.",
-      }
+      systemInstruction: "You are a helpful AI Study Assistant. Keep responses focused and readable.",
     });
 
-    return response.text; // Use .text property, not .text()
+    const result = await genModel.generateContent({
+      contents,
+    });
+
+    return result.response.text();
   } catch (err: any) {
     console.error("AI SDK Error:", err);
     throw err;
@@ -94,13 +95,13 @@ export const generateChatStream = async (
 
     contents.push({ role: "user", parts });
 
-    // Use generateContentStream
-    return await ai.models.generateContentStream({
+    const genModel = ai.getGenerativeModel({
       model: MODEL_TO_USE,
+      systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Use markdown.",
+    });
+
+    return await genModel.generateContentStream({
       contents,
-      config: {
-        systemInstruction: "You are a helpful AI Study Assistant. Help the student understand their material. Use markdown.",
-      }
     });
   } catch (err: any) {
     console.error("AI Stream SDK Error:", err);
@@ -127,12 +128,15 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
       parts.push({ text: `Content:\n${textContent}` });
     }
 
-    const response = await ai.models.generateContent({
+    const genModel = ai.getGenerativeModel({
       model: MODEL_TO_USE,
+    });
+
+    const result = await genModel.generateContent({
       contents: [{ role: "user", parts }]
     });
 
-    return response.text;
+    return result.response.text();
   } catch (err) {
     console.error("Summarize Error:", err);
     return "Could not generate summary.";
@@ -156,15 +160,18 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
       });
     }
 
-    const response = await ai.models.generateContent({
+    const genModel = ai.getGenerativeModel({
       model: MODEL_TO_USE,
-      contents: [{ role: "user", parts }],
-      config: {
+      generationConfig: {
         responseMimeType: "application/json"
       }
     });
 
-    const text = response.text;
+    const result = await genModel.generateContent({
+      contents: [{ role: "user", parts }],
+    });
+
+    const text = result.response.text();
     if (!text) throw new Error("No response from AI");
     return JSON.parse(text);
   } catch (err) {
@@ -178,15 +185,18 @@ export const getSmartRecommendations = async (chatHistory: string[]) => {
     const ai = getAI();
     const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
     
-    const response = await ai.models.generateContent({
+    const genModel = ai.getGenerativeModel({
       model: MODEL_TO_USE,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
+      generationConfig: {
         responseMimeType: "application/json"
       }
     });
+    
+    const result = await genModel.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
 
-    const text = response.text;
+    const text = result.response.text();
     if (!text) return [];
     return JSON.parse(text);
   } catch {
