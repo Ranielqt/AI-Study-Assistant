@@ -1,26 +1,22 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { QuizQuestion } from "../types";
 
-let aiInstance: GoogleGenerativeAI | null = null;
+let aiInstance: GoogleGenAI | null = null;
 
 export function getAI() {
   if (!aiInstance) {
-    // Standard access for Vite/Vercel and local environments
-    const apiKey = import.meta.env?.VITE_GEMINI_API_KEY || 
-                   process.env?.VITE_GEMINI_API_KEY ||
-                   import.meta.env?.GEMINI_API_KEY ||
-                   process.env?.GEMINI_API_KEY;
+    // Priority: process.env.GEMINI_API_KEY as per coding guidelines
+    const apiKey = process.env.GEMINI_API_KEY || 
+                   import.meta.env?.VITE_GEMINI_API_KEY ||
+                   process.env?.VITE_GEMINI_API_KEY;
                    
-    if (!apiKey) {
-      console.error("Missing Gemini API Key. Ensure VITE_GEMINI_API_KEY is defined.");
-    }
-    aiInstance = new GoogleGenerativeAI(apiKey || "");
+    aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
   }
   return aiInstance;
 }
 
-// Using the most stable model identifier
-const MODEL_TO_USE = "gemini-1.5-flash";
+// Model suggested by the coding guidelines for text tasks
+const MODEL_TO_USE = "gemini-3-flash-preview";
 
 const capHistory = (history: any[]) => {
   if (history.length > 20) {
@@ -36,7 +32,6 @@ export const generateStudyResponse = async (
 ) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
     
     const parts: any[] = [{ text: question }];
     if (file) {
@@ -49,21 +44,16 @@ export const generateStudyResponse = async (
     }
     
     const contents = history.map(h => ({
-      role: h.role === 'assistant' ? 'model' : h.role, // SDK uses 'model' instead of 'assistant'
+      role: h.role === 'assistant' ? 'model' : h.role,
       parts: h.parts.map((p: any) => ({ text: p.text }))
     }));
     
-    contents.push({ role: "user", parts });
-
-    const chat = genModel.startChat({
-      history: contents.slice(0, -1),
-      generationConfig: {
-        maxOutputTokens: 1000,
-      },
+    const response = await ai.models.generateContent({
+      model: MODEL_TO_USE,
+      contents: [...contents, { role: "user", parts }]
     });
 
-    const result = await chat.sendMessage(contents[contents.length - 1].parts);
-    return result.response.text();
+    return response.text;
   } catch (err: any) {
     console.error("AI SDK Error:", err);
     throw err;
@@ -77,7 +67,6 @@ export const generateChatStream = async (
 ) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
 
     const parts: any[] = [{ text: question || (file ? "Analyze this file." : "") }];
     if (file) {
@@ -94,11 +83,11 @@ export const generateChatStream = async (
       parts: h.parts.map((p: any) => ({ text: p.text }))
     }));
 
-    const chat = genModel.startChat({
-      history: contents,
+    // In the new SDK, generateContentStream is called directly
+    return await ai.models.generateContentStream({
+      model: MODEL_TO_USE,
+      contents: [...contents, { role: "user", parts }]
     });
-
-    return await chat.sendMessageStream(parts);
   } catch (err: any) {
     console.error("AI Stream SDK Error:", err);
     throw err;
@@ -108,8 +97,6 @@ export const generateChatStream = async (
 export const summarizeNotes = async (fileName: string, fileData?: { data: string, mimeType: string }, textContent?: string) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ model: MODEL_TO_USE }, { apiVersion: "v1" });
-    
     const parts: any[] = [
       { text: `Summarize the following notes from "${fileName}" in 100-200 words. Key takeaways only.` }
     ];
@@ -125,11 +112,12 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
       parts.push({ text: `Content:\n${textContent}` });
     }
 
-    const result = await genModel.generateContent({
+    const response = await ai.models.generateContent({
+      model: MODEL_TO_USE,
       contents: [{ role: "user", parts }]
     });
 
-    return result.response.text();
+    return response.text || "Could not generate summary.";
   } catch (err) {
     console.error("Summarize Error:", err);
     return "Could not generate summary.";
@@ -139,12 +127,6 @@ export const summarizeNotes = async (fileName: string, fileData?: { data: string
 export const generateQuiz = async (topicOrContent: string, file?: { data: string, mimeType: string }): Promise<QuizQuestion[]> => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ 
-      model: MODEL_TO_USE,
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    }, { apiVersion: "v1" });
     
     const prompt = `Generate 5 multiple-choice questions about: "${topicOrContent}". 
     Return strictly a JSON array of objects with keys: question, options (array of 4 strings), correctAnswer (index 0-3), and explanation.`;
@@ -159,21 +141,34 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
       });
     }
 
-    const result = await genModel.generateContent({
+    const response = await ai.models.generateContent({
+      model: MODEL_TO_USE,
       contents: [{ role: "user", parts }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              options: { 
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              },
+              correctAnswer: { type: Type.NUMBER },
+              explanation: { type: Type.STRING }
+            },
+            required: ["question", "options", "correctAnswer", "explanation"]
+          }
+        }
+      }
     });
 
-    const text = result.response.text();
+    const text = response.text;
     if (!text) throw new Error("No response from AI");
     
-    let cleanedText = text.trim();
-    if (cleanedText.startsWith("```json")) {
-      cleanedText = cleanedText.replace(/^```json/, "").replace(/```$/, "").trim();
-    } else if (cleanedText.startsWith("```")) {
-      cleanedText = cleanedText.replace(/^```/, "").replace(/```$/, "").trim();
-    }
-    
-    return JSON.parse(cleanedText);
+    return JSON.parse(text);
   } catch (err) {
     console.error("Quiz Error:", err);
     throw err;
@@ -183,28 +178,24 @@ export const generateQuiz = async (topicOrContent: string, file?: { data: string
 export const getSmartRecommendations = async (chatHistory: string[]) => {
   try {
     const ai = getAI();
-    const genModel = ai.getGenerativeModel({ 
-      model: MODEL_TO_USE,
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    }, { apiVersion: "v1" });
-
     const prompt = `Based on these study topics: ${chatHistory.join(", ")}. Suggest 3 follow-up study topics as a JSON array of strings.`;
     
-    const result = await genModel.generateContent({
+    const response = await ai.models.generateContent({
+      model: MODEL_TO_USE,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        }
+      }
     });
 
-    const text = result.response.text();
+    const text = response.text;
     if (!text) return [];
     
-    let cleanedText = text.trim();
-    if (cleanedText.startsWith("```json")) {
-      cleanedText = cleanedText.replace(/^```json/, "").replace(/```$/, "").trim();
-    }
-    
-    return JSON.parse(cleanedText);
+    return JSON.parse(text);
   } catch {
     return [];
   }
